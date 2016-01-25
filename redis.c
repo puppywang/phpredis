@@ -4247,9 +4247,7 @@ redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAMETERS, char *keyword, long 
     REDIS_PROCESS_REQUEST(redis_sock, cmd, cmd_len);
     if (store) {
             IF_ATOMIC() {
-                if(redis_long_response(INTERNAL_FUNCTION_PARAM_PASSTHRU, redis_sock, NULL, NULL) < 0) {
-                    RETURN_FALSE;
-                }
+                redis_long_response(INTERNAL_FUNCTION_PARAM_PASSTHRU, redis_sock, NULL, NULL);
             }
             REDIS_PROCESS_RESPONSE(redis_long_response);
     } else if(withscores) {
