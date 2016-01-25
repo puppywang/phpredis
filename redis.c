@@ -193,7 +193,7 @@ static zend_function_entry redis_functions[] = {
      PHP_ME(Redis, zRangeByScore, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, zRangeByScoreStore, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, zRevRangeByScore, NULL, ZEND_ACC_PUBLIC)
-     PHP_ME(Redis, zRevRangeByScoreStore, NULL, ZEND_ACC_PUBLIC);
+     PHP_ME(Redis, zRevRangeByScoreStore, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, zRangeByLex, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, zCount, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, zDeleteRangeByScore, NULL, ZEND_ACC_PUBLIC)
