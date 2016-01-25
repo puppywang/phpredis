@@ -4173,7 +4173,7 @@ PHP_METHOD(Redis, zReverseRange)
 /* }}} */
 
 PHP_REDIS_API void
-redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAMETERS, char *keyword) {
+redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAMETERS, char *keyword, long store) {
 
     zval *object, *z_options = NULL, **z_limit_val_pp = NULL, **z_withscores_val_pp = NULL;
 
@@ -4245,7 +4245,14 @@ redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAMETERS, char *keyword) {
 	if(key_free) efree(key);
 
     REDIS_PROCESS_REQUEST(redis_sock, cmd, cmd_len);
-    if(withscores) {
+    if (store) {
+            IF_ATOMIC() {
+                if(redis_long_response(INTERNAL_FUNCTION_PARAM_PASSTHRU, redis_sock, NULL, NULL) < 0) {
+                    RETURN_FALSE;
+                }
+            }
+            REDIS_PROCESS_RESPONSE(redis_long_response);
+    } else if(withscores) {
             /* with scores! we have to transform the return array.
              * return_value currently holds this: [elt0, val0, elt1, val1 ... ]
              * we want [elt0 => val0, elt1 => val1], etc.
@@ -4271,14 +4278,28 @@ redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAMETERS, char *keyword) {
  */
 PHP_METHOD(Redis, zRangeByScore)
 {
-	redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZRANGEBYSCORE");
+	redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZRANGEBYSCORE", 0);
 }
 /* }}} */
 /* {{{ proto array Redis::zRevRangeByScore(string key, string start , string end [,array options = NULL])
  */
 PHP_METHOD(Redis, zRevRangeByScore)
 {
-	redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZREVRANGEBYSCORE");
+	redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZREVRANGEBYSCORE", 0);
+}
+
+/* {{{ proto int Redis::zRangeByScoreStore(string key, string start , string end [,array options = NULL])
+ */
+PHP_METHOD(Redis, zRangeByScore)
+{
+    redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZRANGEBYSCORESTORE", 1);
+}
+/* }}} */
+/* {{{ proto int Redis::zRevRangeByScoreStore(string key, string start , string end [,array options = NULL])
+ */
+PHP_METHOD(Redis, zRevRangeByScore)
+{
+    redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZREVRANGEBYSCORESTORE", 1);
 }
 
 /* {{{ proto array Redis::zCount(string key, string start , string end)
@@ -4534,7 +4555,7 @@ PHP_METHOD(Redis, zIncrBy)
 }
 /* }}} */
 
-PHP_REDIS_API void generic_z_command(INTERNAL_FUNCTION_PARAMETERS, char *command, int command_len) {
+PHP_REDIS_API void generic_z_command(INTERNAL_FUNCTION_PARAMETERS, char *command, int command_len, long store) {
     zval *object, *z_keys, *z_weights = NULL, **z_data;
     HashTable *ht_keys, *ht_weights = NULL;
     RedisSock *redis_sock;
@@ -4543,11 +4564,12 @@ PHP_REDIS_API void generic_z_command(INTERNAL_FUNCTION_PARAMETERS, char *command
     char *store_key, *agg_op = NULL;
     int cmd_arg_count = 2, store_key_len, agg_op_len = 0, keys_count;
 	int key_free;
+    long withscores = 0;
 
     /* Grab our parameters */
-    if(zend_parse_method_parameters(ZEND_NUM_ARGS() TSRMLS_CC, getThis(), "Osa|a!s",
+    if(zend_parse_method_parameters(ZEND_NUM_ARGS() TSRMLS_CC, getThis(), "Osa|a!sb",
                                     &object, redis_ce, &store_key, &store_key_len,
-                                    &z_keys, &z_weights, &agg_op, &agg_op_len) == FAILURE)
+                                    &z_keys, &z_weights, &agg_op, &agg_op_len, &withscores) == FAILURE)
     {
         RETURN_FALSE;
     }
@@ -4690,21 +4712,52 @@ PHP_REDIS_API void generic_z_command(INTERNAL_FUNCTION_PARAMETERS, char *command
     }
 
     /* Kick off our request */
-    REDIS_PROCESS_REQUEST(redis_sock, cmd.c, cmd.len);
-    IF_ATOMIC() {
-        redis_long_response(INTERNAL_FUNCTION_PARAM_PASSTHRU, redis_sock, NULL, NULL);
+    if (store) {
+        REDIS_PROCESS_REQUEST(redis_sock, cmd.c, cmd.len);
+        IF_ATOMIC() {
+            redis_long_response(INTERNAL_FUNCTION_PARAM_PASSTHRU, redis_sock, NULL, NULL);
+        }
+        REDIS_PROCESS_RESPONSE(redis_long_response);
+    } else if (withscores) {
+        /* with scores! we have to transform the return array.
+         * return_value currently holds this: [elt0, val0, elt1, val1 ... ]
+         * we want [elt0 => val0, elt1 => val1], etc.
+         */
+        IF_ATOMIC() {
+            if(redis_mbulk_reply_zipped_keys_dbl(INTERNAL_FUNCTION_PARAM_PASSTHRU, redis_sock, NULL, NULL) < 0) {
+                RETURN_FALSE;
+            }
+        }
+        REDIS_PROCESS_RESPONSE(redis_mbulk_reply_zipped_keys_dbl);
+    } else {
+        IF_ATOMIC() {
+            if(redis_sock_read_multibulk_reply(INTERNAL_FUNCTION_PARAM_PASSTHRU,
+                                                redis_sock, NULL, NULL) < 0) {
+                RETURN_FALSE;
+            }
+        }
+        REDIS_PROCESS_RESPONSE(redis_sock_read_multibulk_reply);
     }
-    REDIS_PROCESS_RESPONSE(redis_long_response);
+}
+
+/* zInter */
+PHP_METHOD(Redis, zInterNoStore) {
+    generic_z_command(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZINTER", 6, 0);
+}
+
+/* zUnion */
+PHP_METHOD(Redis, zUnionNoStore) {
+    generic_z_command(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZUNION", 6, 0);
 }
 
 /* zInter */
 PHP_METHOD(Redis, zInter) {
-	generic_z_command(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZINTERSTORE", 11);
+	generic_z_command(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZINTERSTORE", 11, 1);
 }
 
 /* zUnion */
 PHP_METHOD(Redis, zUnion) {
-	generic_z_command(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZUNIONSTORE", 11);
+	generic_z_command(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZUNIONSTORE", 11, 1);
 }
 
 /* hashes */
