@@ -204,8 +204,10 @@ static zend_function_entry redis_functions[] = {
      PHP_ME(Redis, zRevRank, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, zInterNoStore, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, zUnionNoStore, NULL, ZEND_ACC_PUBLIC)
+     PHP_ME(Redis, zDiffNoStore, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, zInter, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, zUnion, NULL, ZEND_ACC_PUBLIC)
+     PHP_ME(Redis, zDiff, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, zIncrBy, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, expireAt, NULL, ZEND_ACC_PUBLIC)
      PHP_ME(Redis, pexpire, NULL, ZEND_ACC_PUBLIC)
@@ -305,6 +307,7 @@ static zend_function_entry redis_functions[] = {
      PHP_MALIAS(Redis, expire, setTimeout, NULL, ZEND_ACC_PUBLIC)
      PHP_MALIAS(Redis, zunionstore, zUnion, NULL, ZEND_ACC_PUBLIC)
      PHP_MALIAS(Redis, zinterstore, zInter, NULL, ZEND_ACC_PUBLIC)
+     PHP_MALIAS(Redis, zdiffstore, zDiff, NULL, ZEND_ACC_PUBLIC)
 
      PHP_MALIAS(Redis, zRemove, zDelete, NULL, ZEND_ACC_PUBLIC)
      PHP_MALIAS(Redis, zRem, zDelete, NULL, ZEND_ACC_PUBLIC)
@@ -4182,21 +4185,33 @@ redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAMETERS, char *keyword, long 
     zval *object, *z_options = NULL, **z_limit_val_pp = NULL, **z_withscores_val_pp = NULL;
 
     RedisSock *redis_sock;
-    char *key = NULL, *cmd;
-    int key_len, cmd_len, key_free;
+    char *key = NULL, *store_key = NULL, *cmd;
+    int key_len, store_key_len, cmd_len, key_free, store_key_free;
     zend_bool withscores = 0;
     char *start, *end;
     int start_len, end_len;
     int has_limit = 0;
     long limit_low, limit_high;
 
-    if (zend_parse_method_parameters(ZEND_NUM_ARGS() TSRMLS_CC, getThis(), "Osss|a",
-                                     &object, redis_ce,
-                                     &key, &key_len,
-                                     &start, &start_len,
-                                     &end, &end_len,
-                                     &z_options) == FAILURE) {
-        RETURN_FALSE;
+    if (!store) {
+        if (zend_parse_method_parameters(ZEND_NUM_ARGS() TSRMLS_CC, getThis(), "Osss|a",
+                                         &object, redis_ce,
+                                         &key, &key_len,
+                                         &start, &start_len,
+                                         &end, &end_len,
+                                         &z_options) == FAILURE) {
+            RETURN_FALSE;
+        }
+    } else {
+        if (zend_parse_method_parameters(ZEND_NUM_ARGS() TSRMLS_CC, getThis(), "Ossss|a",
+                                         &object, redis_ce,
+                                         &store_key, &store_key_len,
+                                         &key, &key_len,
+                                         &start, &start_len,
+                                         &end, &end_len,
+                                         &z_options) == FAILURE) {
+            RETURN_FALSE;
+        }
     }
 
     if (redis_sock_get(object, &redis_sock TSRMLS_CC, 0) < 0) {
@@ -4205,9 +4220,11 @@ redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAMETERS, char *keyword, long 
 
     /* options */
     if (z_options && Z_TYPE_P(z_options) == IS_ARRAY) {
-        /* add scores */
-        zend_hash_find(Z_ARRVAL_P(z_options), "withscores", sizeof("withscores"), (void**)&z_withscores_val_pp);
-        withscores = (z_withscores_val_pp ? Z_BVAL_PP(z_withscores_val_pp) : 0);
+        if (!store) {
+            /* add scores */
+            zend_hash_find(Z_ARRVAL_P(z_options), "withscores", sizeof("withscores"), (void**)&z_withscores_val_pp);
+            withscores = (z_withscores_val_pp ? Z_BVAL_PP(z_withscores_val_pp) : 0);
+        }
 
         /* limit offset, count:
            z_limit_val_pp points to an array($longFrom, $longCount)
@@ -4230,7 +4247,17 @@ redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAMETERS, char *keyword, long 
     }
 
 	key_free = redis_key_prefix(redis_sock, &key, &key_len TSRMLS_CC);
-    if(withscores) {
+    if(store) {
+        store_key_free = redis_key_prefix(redis_sock, &store_key, &store_key_len TSRMLS_CC);
+        if(has_limit) {
+            cmd_len = redis_cmd_format_static(&cmd, keyword, "sssssdd",
+                            store_key, store_key_len, key, key_len, start, start_len, end, end_len, "LIMIT", 5, limit_low, limit_high);
+        } else {
+            cmd_len = redis_cmd_format_static(&cmd, keyword, "ssss",
+                            store_key, store_key_len, key, key_len, start, start_len, end, end_len);
+        }
+        if (store_key_free) efree(store_key);
+    } else if(withscores) {
         if(has_limit) {
             cmd_len = redis_cmd_format_static(&cmd, keyword, "ssssdds",
                             key, key_len, start, start_len, end, end_len, "LIMIT", 5, limit_low, limit_high, "WITHSCORES", 10);
@@ -4569,11 +4596,20 @@ PHP_REDIS_API void generic_z_command(INTERNAL_FUNCTION_PARAMETERS, char *command
     long withscores = 0;
 
     /* Grab our parameters */
-    if(zend_parse_method_parameters(ZEND_NUM_ARGS() TSRMLS_CC, getThis(), "Osa|a!sb",
-                                    &object, redis_ce, &store_key, &store_key_len,
-                                    &z_keys, &z_weights, &agg_op, &agg_op_len, &withscores) == FAILURE)
-    {
-        RETURN_FALSE;
+    if (store) {
+        if(zend_parse_method_parameters(ZEND_NUM_ARGS() TSRMLS_CC, getThis(), "Osa|a!s",
+                                        &object, redis_ce, &store_key, &store_key_len,
+                                        &z_keys, &z_weights, &agg_op, &agg_op_len) == FAILURE)
+        {
+            RETURN_FALSE;
+        }
+    } else {
+        if(zend_parse_method_parameters(ZEND_NUM_ARGS() TSRMLS_CC, getThis(), "Oa|a!sb",
+                                        &object, redis_ce,
+                                        &z_keys, &z_weights, &agg_op, &agg_op_len, &withscores) == FAILURE)
+        {
+            RETURN_FALSE;
+        }
     }
 
     /* We'll need our socket */
@@ -4624,10 +4660,12 @@ PHP_REDIS_API void generic_z_command(INTERNAL_FUNCTION_PARAMETERS, char *command
     /* Command header */
     redis_cmd_init_sstr(&cmd, cmd_arg_count, command, command_len);
 
-    /* Prefix our key if necessary and add the output key */
-    key_free = redis_key_prefix(redis_sock, &store_key, &store_key_len TSRMLS_CC);
-    redis_cmd_append_sstr(&cmd, store_key, store_key_len);
-    if(key_free) efree(store_key);
+    if (store) {
+        /* Prefix our key if necessary and add the output key */
+        key_free = redis_key_prefix(redis_sock, &store_key, &store_key_len TSRMLS_CC);
+        redis_cmd_append_sstr(&cmd, store_key, store_key_len);
+        if(key_free) efree(store_key);
+    }
 
     /* Number of input keys argument */
     redis_cmd_append_sstr_int(&cmd, keys_count);
@@ -4713,6 +4751,10 @@ PHP_REDIS_API void generic_z_command(INTERNAL_FUNCTION_PARAMETERS, char *command
         redis_cmd_append_sstr(&cmd, agg_op, agg_op_len);
     }
 
+    if (withscores) {
+        redis_cmd_append_sstr(&cmd, "WITHSCORES", sizeof("WITHSCORES") - 1);
+    }
+
     /* Kick off our request */
     if (store) {
         REDIS_PROCESS_REQUEST(redis_sock, cmd.c, cmd.len);
@@ -4752,6 +4794,11 @@ PHP_METHOD(Redis, zUnionNoStore) {
     generic_z_command(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZUNION", 6, 0);
 }
 
+/* zDiff */
+PHP_METHOD(Redis, zDiffNoStore) {
+    generic_z_command(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZDIFF", 5, 0);
+}
+
 /* zInter */
 PHP_METHOD(Redis, zInter) {
 	generic_z_command(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZINTERSTORE", 11, 1);
@@ -4760,6 +4807,11 @@ PHP_METHOD(Redis, zInter) {
 /* zUnion */
 PHP_METHOD(Redis, zUnion) {
 	generic_z_command(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZUNIONSTORE", 11, 1);
+}
+
+/* zDiff */
+PHP_METHOD(Redis, zDiff) {
+    generic_z_command(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZDIFFSTORE", 10, 1);
 }
 
 /* hashes */
