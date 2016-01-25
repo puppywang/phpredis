@@ -4290,14 +4290,14 @@ PHP_METHOD(Redis, zRevRangeByScore)
 
 /* {{{ proto int Redis::zRangeByScoreStore(string key, string start , string end [,array options = NULL])
  */
-PHP_METHOD(Redis, zRangeByScore)
+PHP_METHOD(Redis, zRangeByScoreStore)
 {
     redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZRANGEBYSCORESTORE", 1);
 }
 /* }}} */
 /* {{{ proto int Redis::zRevRangeByScoreStore(string key, string start , string end [,array options = NULL])
  */
-PHP_METHOD(Redis, zRevRangeByScore)
+PHP_METHOD(Redis, zRevRangeByScoreStore)
 {
     redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZREVRANGEBYSCORESTORE", 1);
 }
