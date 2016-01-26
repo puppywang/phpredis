@@ -2361,6 +2361,109 @@ class Redis_Test extends TestSuite
         $this->assertFalse($this->redis->zRangeByLex('zlex','(a','[b',1));
     }
 
+    public function testZRangeByScoreStore() {
+        /* Only out since 3.0.0 */
+        if (version_compare($this->version,  '3.0.0', 'lt')) {
+            $this->markTestSkipped();
+            return;
+        }
+
+        $arr1_vals = Array(0 => 'a','b','c','d','e','f','g');
+        $arr2_vals = Array(7 => 'h','i','j','k','l','m','n');
+
+        $this->redis->del('zcore', 'zscore1', 'zscore2');
+        foreach($arr1_vals as $str_index => $str_val) {
+            $this->redis->zadd('zscore1', $str_index, $str_val);
+        }
+        foreach($arr2_vals as $str_index => $str_val) {
+            $this->redis->zadd('zscore2', $str_index, $str_val);
+        }
+
+        /* These tests were taken off of redis.io out of sheer laziness :) */
+        $count_ret = $this->redis->zRangeByScoreStore('zscore', 'zscore1', 5, '+inf', array());
+        $this->assertTrue($count_ret === 2);
+        $arr_ret = $this->redis->zRange('zscore', 0, -1, true);
+        $this->assertTrue($arr_ret === array('f' => 5.0, 'g' => 6.0));
+
+        $count_ret = $this->redis->zRangeByScoreStore('zscore', 'zscore2', '-inf', '8', array());
+        $this->assertTrue($count_ret === 2);
+        $arr_ret = $this->redis->zRange('zscore', 0, -1, true);
+        $this->assertTrue($arr_ret === array('h' => 7.0, 'i' => 8.0));
+
+        $count_ret = $this->redis->zRevRangeByScoreStore('zscore', 'zscore1', 1, '-inf', array());
+        $this->assertTrue($count_ret === 2);
+        $arr_ret = $this->redis->zRevRange('zscore', 0, -1, true);
+        $this->assertTrue($arr_ret === array('b' => 1.0, 'a' => 0.0));
+
+        $count_ret = $this->redis->zRevRangeByScoreStore('zscore', 'zscore2', '+inf', '12', array());
+        $this->assertTrue($count_ret === 2);
+        $arr_ret = $this->redis->zRevRange('zscore', 0, -1, true);
+        $this->assertTrue($arr_ret === array('n' => 13.0, 'm' => 12.0));
+    }
+
+    public function testZDiffStore() {
+        /* Only out since 3.0.0 */
+        if (version_compare($this->version,  '3.0.0', 'lt')) {
+            $this->markTestSkipped();
+            return;
+        }
+
+        $arr1_vals = Array(0 => 'a','b','c','d','e','f','g','h');
+        $arr2_vals = Array(7 => 'g','h','i','j','k','l','m','n');
+
+        $this->redis->del('zcore', 'zscore1', 'zscore2');
+        foreach($arr1_vals as $str_index => $str_val) {
+            $this->redis->zadd('zscore1', $str_index, $str_val);
+        }
+        foreach($arr2_vals as $str_index => $str_val) {
+            $this->redis->zadd('zscore2', $str_index, $str_val);
+        }
+
+        /* These tests were taken off of redis.io out of sheer laziness :) */
+        $count_ret = $this->redis->zDiff('score', array('zscore1', 'zscore2'), null, 'MAX');
+        $this->assertTrue($count_ret === 6);
+        $arr_ret = $this->redis->zRange('score', 0, -1, true);
+        $this->assertTrue($arr_ret === array('a' => 0.0, 'b' => 1.0, 'c' => 2.0, 'd' => 3.0, 'e' => 4.0, 'f' => 5.0));
+
+        $count_ret = $this->redis->zDiff('score', array('zscore2', 'zscore1'), null, 'MAX');
+        $this->assertTrue($count_ret === 6);
+        $arr_ret = $this->redis->zRange('score', 0, -1, true);
+        $this->assertTrue($arr_ret === array('i' => 9.0, 'j' => 10.0, 'k' => 11.0, 'l' => 12.0, 'm' => 13.0, 'n' => 14.0));
+    }
+
+    public function testZUnionInterDiff() {
+        /* Only out since 3.0.0 */
+        if (version_compare($this->version,  '3.0.0', 'lt')) {
+            $this->markTestSkipped();
+            return;
+        }
+
+        $arr1_vals = Array(0 => 'a','b','c','d','e','f','g','h');
+        $arr2_vals = Array(7 => 'g','h','i','j','k','l','m','n');
+
+        $this->redis->del('zcore', 'zscore1', 'zscore2');
+        foreach($arr1_vals as $str_index => $str_val) {
+            $this->redis->zadd('zscore1', $str_index, $str_val);
+        }
+        foreach($arr2_vals as $str_index => $str_val) {
+            $this->redis->zadd('zscore2', $str_index, $str_val);
+        }
+
+        /* These tests were taken off of redis.io out of sheer laziness :) */
+        $arr_ret = $this->redis->zUnionNoStore(array('zscore1', 'zscore2'), null, 'SUM', true);
+        $this->assertTrue($arr_ret === array('a' => 0.0, 'b' => 1.0, 'c' => 2.0, 'd' => 3.0, 'e' => 4.0, 'f' => 5.0, 'i' => 9.0, 'j' => 10.0, 'k' => 11.0, 'l' => 12.0, 'g' => 13.0, 'm' => 13.0, 'n' => 14.0, 'h' => 15.0));
+
+        $arr_ret = $this->redis->zInterNoStore(array('zscore1', 'zscore2'), null, 'MIN', true);
+        $this->assertTrue($arr_ret === array('g' => 6.0, 'h' => 7.0));
+
+        $arr_ret = $this->redis->zDiffNoStore(array('zscore1', 'zscore2'), null, 'MAX', true);
+        $this->assertTrue($arr_ret === array('a' => 0.0, 'b' => 1.0, 'c' => 2.0, 'd' => 3.0, 'e' => 4.0, 'f' => 5.0));
+
+        $arr_ret = $this->redis->zDiffNoStore(array('zscore2', 'zscore1'), null, 'MAX', false);
+        $this->assertTrue($arr_ret === array('i', 'j', 'k', 'l', 'm', 'n'));
+    }
+
+
     public function testHashes() {
 	$this->redis->delete('h', 'key');
 
