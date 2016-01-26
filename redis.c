@@ -4591,7 +4591,7 @@ PHP_REDIS_API void generic_z_command(INTERNAL_FUNCTION_PARAMETERS, char *command
     smart_str cmd = {0};
     HashPosition ptr;
     char *store_key, *agg_op = NULL;
-    int cmd_arg_count = 2, store_key_len, agg_op_len = 0, keys_count;
+    int cmd_arg_count = store ? 2 : 1, store_key_len, agg_op_len = 0, keys_count;
 	int key_free;
     long withscores = 0;
 
