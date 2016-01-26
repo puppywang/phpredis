@@ -4657,6 +4657,11 @@ PHP_REDIS_API void generic_z_command(INTERNAL_FUNCTION_PARAMETERS, char *command
         cmd_arg_count += 2;
     }
 
+    /* WITHSCORES option */
+    if (withscores) {
+        cmd_arg_count += 1;   
+    }
+
     /* Command header */
     redis_cmd_init_sstr(&cmd, cmd_arg_count, command, command_len);
 
