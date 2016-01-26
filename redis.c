@@ -4317,14 +4317,14 @@ PHP_METHOD(Redis, zRevRangeByScore)
 	redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZREVRANGEBYSCORE", 0);
 }
 
-/* {{{ proto int Redis::zRangeByScoreStore(string key, string start , string end [,array options = NULL])
+/* {{{ proto int Redis::zRangeByScoreStore(string store_key, string key, string start , string end [,array options = NULL])
  */
 PHP_METHOD(Redis, zRangeByScoreStore)
 {
     redis_generic_zrange_by_score(INTERNAL_FUNCTION_PARAM_PASSTHRU, "ZRANGEBYSCORESTORE", 1);
 }
 /* }}} */
-/* {{{ proto int Redis::zRevRangeByScoreStore(string key, string start , string end [,array options = NULL])
+/* {{{ proto int Redis::zRevRangeByScoreStore(string store_key, string key, string start , string end [,array options = NULL])
  */
 PHP_METHOD(Redis, zRevRangeByScoreStore)
 {
@@ -4756,8 +4756,8 @@ PHP_REDIS_API void generic_z_command(INTERNAL_FUNCTION_PARAMETERS, char *command
     }
 
     /* Kick off our request */
+    REDIS_PROCESS_REQUEST(redis_sock, cmd.c, cmd.len);
     if (store) {
-        REDIS_PROCESS_REQUEST(redis_sock, cmd.c, cmd.len);
         IF_ATOMIC() {
             redis_long_response(INTERNAL_FUNCTION_PARAM_PASSTHRU, redis_sock, NULL, NULL);
         }
